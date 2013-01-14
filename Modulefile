@@ -1,0 +1,6 @@
+name        'conduct-opendj'
+version     '0.0.1'
+author      'Conduct AS'
+license     'Simplified BSD License'
+summary     'OpenDJ configuration module'
+description 'Module for configuration of ForgeRock OpenDJ'
