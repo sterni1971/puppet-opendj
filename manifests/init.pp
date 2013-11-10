@@ -4,7 +4,7 @@
 #
 # === Authors
 #
-# Conduct AS <iam-nsb@conduct.no>
+# Eivind Mikkelsen <eivindm@conduct.no>
 #
 # === Copyright
 #
@@ -12,33 +12,72 @@
 #
 
 class opendj (
-  $opendj_ldap_host       = hiera('opendj_host', $::opendj_ldap_host),
-  $opendj_ldap_port       = hiera('opendj_ldap_port', $::opendj_ldap_port),
-  $opendj_admin_port      = hiera('opendj_admin_port', $::opendj_admin_port),
-  $opendj_jmx_port        = hiera('opendj_jmx_port', $::opendj_jmx_port),
-  $opendj_admin_user      = hiera('opendj_admin_user', $::opendj_admin_user),
-  $opendj_admin_password  = hiera('opendj_admin_password', $::opendj_admin_password),
+  $ldap_port       = hiera('opendj::ldap_port', '1389'),
+  $ldaps_port      = hiera('opendj::ldaps_port', '1636'),
+  $admin_port      = hiera('opendj::admin_port', '4444'),
+  $jmx_port        = hiera('opendj::jmx_port', '1689'),
+  $admin_user      = hiera('opendj::admin_user', 'cn=Directory Manager'),
+  $admin_password  = hiera('opendj::admin_password'),
+  $base_dn         = hiera('opendj::base_dn'),
+  $home            = hiera('opendj::home', '/opt/opendj'),
+  $user            = hiera('opendj::user', 'opendj'),
+  $group           = hiera('opendj::group', 'opendj'),
+  $host            = hiera('opendj::host'),
+  $tmp		   = hiera('opendj::tmpdir', '/dev/shm'),
 ) {
+  $common_opts = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
+  $ldapsearch  = "${opendj::home}/bin/ldapsearch ${common_opts} -p ${opendj::ldap_port}"
+  $ldapmodify  = "${opendj::home}/bin/ldapmodify ${common_opts} -p ${opendj::ldap_port}"
+  $dsconfig    = "${opendj::home}/bin/dsconfig   ${common_opts} -p ${opendj::admin_port} -X -n"
 
-  # FIXME: Should use the encode-password utility to generate a salted hash (SSHA512),
-  # however this would result in a unique hash after each run resulting in frequent
-  # and unnecessary changes of config.ldif. Need to find a better way to handle this.
-  #
-  # `su opendj -c "/var/lib/opendj/bin/encode-password -s SSHA512 -c foobarbaz" | awk '{ print $3 }' | cut -d \" -f2`
-  #
-  # Hardcoded hash of `admin` for testing purposes.
-  $opendj_admin_password_hash = "{SHA}0DPiKuNIrrVmD8IUCuw1hQxNqZc="
+  package { "opendj":
+    ensure => present,
+  }
 
-  $opendj_home                = '/var/lib/opendj'
+  file { "${home}":
+    ensure => directory,
+    owner => $user,
+    group => $group,
+    require => Package["opendj"]
+  }
 
-  package { "opendj": ensure => present }
+  file { "${tmp}/opendj.properties":
+    ensure => file,
+    content => template("${module_name}/setup.erb"),
+    owner  => $user,
+    group  => $group,
+    mode => 0600,
+    require => File["${home}"],
+  }
 
-  file { "${opendj_home}/config/config.ldif":
-    ensure  => present,
-    content => template("${module_name}/config.ldif.erb"),
-    require => Package["opendj"],
-    owner   => 'opendj',
-    group   => 'opendj',
-    mode    => 0600,
+  file { "${tmp}/base_dn.ldif":
+    ensure => file,
+    content => template("${module_name}/base_dn.ldif.erb"),
+    owner => $user,
+    group => $group,
+    mode => 0600
+  }
+
+  exec { "configure opendj":
+    require => File["${tmp}/opendj.properties"],
+    command => "/bin/su opendj -s /bin/bash -c '${home}/setup -i \
+        -n -Q --acceptLicense --propertiesFilePath /dev/shm/opendj.properties'",
+    creates => "${home}/config",
+    notify => Exec['create base dn'],
+  }
+
+  exec { "create base dn":
+    require => File["${tmp}/base_dn.ldif"],
+    command => "${home}/bin/ldapmodify -a -D '${admin_user}' \
+	-w '${admin_password}' -h ${fqdn} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
+    refreshonly => true,
+  }
+
+  exec { "set single structural objectclass behavior":
+    command => "${dsconfig} --advanced set-global-configuration-prop --set single-structural-objectclass-behavior:accept",
+    unless  => "${dsconfig} --advanced get-global-configuration-prop | grep 'single-structural-objectclass-behavior : accept'",
+    require => Exec["configure opendj"]
   }
 }
+
+Class['opendj'] -> Class['openam']
