@@ -73,10 +73,6 @@ class opendj (
     require => Exec["configure opendj"],
     command => "/bin/su ${user} -s /bin/bash -c \" \
       $dsconfig set-global-configuration-prop \
-        --port ${admin_port} \
-        --hostname ${fqdn} \
-        --bindDN '${bind_dn}' \
-        --bindPassword '${admin_password}' \
         --set reject-unauthenticated-requests:true\""
   }
 
