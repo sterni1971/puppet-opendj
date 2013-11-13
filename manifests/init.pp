@@ -27,12 +27,11 @@ class opendj (
   $tmp		         = hiera('opendj::tmpdir', '/dev/shm'),
   $master          = hiera('opendj::master', undef),
 ) {
-  $su          = "/bin/su ${opendj::user} -s /bin/bash"
-  $common_opts = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
-  $ldapsearch  = "${opendj::home}/bin/ldapsearch ${common_opts} -p ${opendj::ldap_port}"
-  $ldapmodify  = "${opendj::home}/bin/ldapmodify ${common_opts} -p ${opendj::ldap_port}"
-  $dsconfig    = "${opendj::home}/bin/dsconfig   ${common_opts} -p ${opendj::admin_port} -X -n"
-  $dsreplication = "$su ${opendj::home}/bin/dsreplication --adminUID admin --adminPassword ${admin_password}"
+  $common_opts   = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
+  $ldapsearch    = "${opendj::home}/bin/ldapsearch ${common_opts} -p ${opendj::ldap_port}"
+  $ldapmodify    = "${opendj::home}/bin/ldapmodify ${common_opts} -p ${opendj::ldap_port}"
+  $dsconfig      = "${opendj::home}/bin/dsconfig   ${common_opts} -p ${opendj::admin_port} -X -n"
+  $dsreplication = "${opendj::home}/bin/dsreplication --adminUID admin --adminPassword ${admin_password} -X -n"
 
   package { "opendj":
     ensure => present,
@@ -69,6 +68,17 @@ class opendj (
     creates => "${home}/config",
     notify => Exec['create base dn'],
   }
+  
+  exec { "reject unauthenticated requests":
+    require => Exec["configure opendj"],
+    command => "/bin/su ${user} -s /bin/bash -c \" \
+      $dsconfig set-global-configuration-prop \
+        --port ${admin_port} \
+        --hostname ${fqdn} \
+        --bindDN '${bind_dn}' \
+        --bindPassword '${admin_password}' \
+        --set reject-unauthenticated-requests:true\""
+  }
 
   exec { "create base dn":
     require => File["${tmp}/base_dn.ldif"],
@@ -84,15 +94,22 @@ class opendj (
   }
 
   if ($fqdn != $master) {
-    exec { "enable replication": 
-      command => "$su $dsreplication \
-        --host1 ${opendj::master} --port1 ${opendj::admin_port} \
-        --replicationPort1 ${opendj::repl_port} \
-        --bindDN1 ${admin_user} --bindPassword1 ${admin_password} \
-        --host2 ${fqdn} --port2 ${opendj::admin_port} \
-        --replicationPort2 ${opendj::repl_port} \
-        --bindDN2 ${opendj::admin_user} --bindPassword2 ${opendj::admin_password} \
-        --baseDN "${opendj::base_dn}" -X -n",
+    exec { "enable replication":
+      command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
+        --host1 ${master} --port1 ${admin_port} \
+        --replicationPort1 ${repl_port} \
+        --bindDN1 '${admin_user}' --bindPassword1 ${admin_password} \
+        --host2 ${fqdn} --port2 ${admin_port} \
+        --replicationPort2 ${repl_port} \
+        --bindDN2 '${admin_user}' --bindPassword2 ${admin_password} \
+        --baseDN '${base_dn}'\"",
+      require => Exec["configure opendj"]
+    }
+
+    exec { "initialize replication":
+      command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication initialize \
+        -h ${master} -p ${admin_port} -O ${fqdn} --baseDN '${base_dn}'\"",
+      require => Exec["enable replication"]
     }
   }
 }
