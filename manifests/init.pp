@@ -72,8 +72,9 @@ class opendj (
   exec { "reject unauthenticated requests":
     require => Exec["configure opendj"],
     command => "/bin/su ${user} -s /bin/bash -c \" \
-      $dsconfig set-global-configuration-prop \
-        --set reject-unauthenticated-requests:true\""
+      $dsconfig set-global-configuration-prop --set reject-unauthenticated-requests:true\"",
+    unless => "/bin/su ${user} -s /bin/bash -c \" \
+      $dsconfig get-global-configuration-prop | grep 'reject-unauthenticated-requests' | grep true\""
   }
 
   exec { "create base dn":
@@ -85,12 +86,13 @@ class opendj (
 
   exec { "set single structural objectclass behavior":
     command => "${dsconfig} --advanced set-global-configuration-prop --set single-structural-objectclass-behavior:accept",
-    unless  => "${dsconfig} --advanced get-global-configuration-prop | grep 'single-structural-objectclass-behavior : accept'",
+    unless  => "${dsconfig} --advanced get-global-configuration-prop | grep 'single-structural-objectclass-behavior' | grep accept",
     require => Exec["configure opendj"]
   }
 
   if ($fqdn != $master) {
-    exec { "enable replication":
+   exec { "enable replication":
+      require => Exec["configure opendj"],
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
         --host1 ${master} --port1 ${admin_port} \
         --replicationPort1 ${repl_port} \
@@ -99,13 +101,16 @@ class opendj (
         --replicationPort2 ${repl_port} \
         --bindDN2 '${admin_user}' --bindPassword2 ${admin_password} \
         --baseDN '${base_dn}'\"",
-      require => Exec["configure opendj"]
+      unless => "/bin/su ${user} -s /bin/bash -c \"$dsreplication \
+        status | grep ${fqdn} | cut -d : -f 5 | grep true\"",
+      notify => Exec["initialize replication"]
     }
 
     exec { "initialize replication":
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication initialize \
         -h ${master} -p ${admin_port} -O ${fqdn} --baseDN '${base_dn}'\"",
-      require => Exec["enable replication"]
+      require => Exec["enable replication"],
+      refreshonly => true,
     }
   }
 }
