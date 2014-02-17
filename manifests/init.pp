@@ -24,7 +24,7 @@ class opendj (
   $user            = hiera('opendj::user', 'opendj'),
   $group           = hiera('opendj::group', 'opendj'),
   $host            = hiera('opendj::host'),
-  $tmp		         = hiera('opendj::tmpdir', '/dev/shm'),
+  $tmp             = hiera('opendj::tmpdir', '/dev/shm'),
   $master          = hiera('opendj::master', undef),
 ) {
   $common_opts   = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
@@ -35,6 +35,16 @@ class opendj (
 
   package { "opendj":
     ensure => present,
+  }
+
+  group { "${group}":
+    ensure => "present",
+  }
+
+  user { "${user}":
+    ensure => "present",
+    groups => $group,
+    managehome => true,
   }
 
   file { "${home}":
