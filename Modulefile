@@ -1,4 +1,4 @@
-name        'opendj'
+name        'conduct-opendj'
 version     '0.0.2'
 author      'Eivind Mikkelsen <eivindm@conduct.no>'
 license     'Simplified BSD License'
