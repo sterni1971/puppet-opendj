@@ -24,7 +24,7 @@ class opendj (
   $user            = hiera('opendj::user', 'opendj'),
   $group           = hiera('opendj::group', 'opendj'),
   $host            = hiera('opendj::host'),
-  $tmp             = hiera('opendj::tmpdir', '/dev/shm'),
+  $tmp             = hiera('opendj::tmpdir', '/tmp'),
   $master          = hiera('opendj::master', undef),
 ) {
   $common_opts   = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
@@ -74,7 +74,7 @@ class opendj (
   exec { "configure opendj":
     require => File["${tmp}/opendj.properties"],
     command => "/bin/su opendj -s /bin/bash -c '${home}/setup -i \
-        -n -Q --acceptLicense --propertiesFilePath /dev/shm/opendj.properties'",
+        -n -Q --acceptLicense --propertiesFilePath ${tmp}/opendj.properties'",
     creates => "${home}/config",
     notify => Exec['create base dn'],
   }
