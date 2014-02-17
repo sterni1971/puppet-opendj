@@ -23,11 +23,11 @@ class opendj (
   $home            = hiera('opendj::home', '/opt/opendj'),
   $user            = hiera('opendj::user', 'opendj'),
   $group           = hiera('opendj::group', 'opendj'),
-  $host            = hiera('opendj::host'),
+  $host            = hiera('opendj::host', $fqdn),
   $tmp             = hiera('opendj::tmpdir', '/tmp'),
   $master          = hiera('opendj::master', undef),
 ) {
-  $common_opts   = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
+  $common_opts   = "-h ${host} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
   $ldapsearch    = "${opendj::home}/bin/ldapsearch ${common_opts} -p ${opendj::ldap_port}"
   $ldapmodify    = "${opendj::home}/bin/ldapmodify ${common_opts} -p ${opendj::ldap_port}"
   $dsconfig      = "${opendj::home}/bin/dsconfig   ${common_opts} -p ${opendj::admin_port} -X -n"
@@ -90,7 +90,7 @@ class opendj (
   exec { "create base dn":
     require => File["${tmp}/base_dn.ldif"],
     command => "${home}/bin/ldapmodify -a -D '${admin_user}' \
-	    -w '${admin_password}' -h ${fqdn} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
+	    -w '${admin_password}' -h ${host} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
     refreshonly => true,
   }
 
@@ -100,25 +100,25 @@ class opendj (
     require => Exec["configure opendj"]
   }
 
-  if ($fqdn != $master) {
+  if ($host != $master) {
    exec { "enable replication":
       require => Exec["configure opendj"],
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
         --host1 ${master} --port1 ${admin_port} \
         --replicationPort1 ${repl_port} \
         --bindDN1 '${admin_user}' --bindPassword1 ${admin_password} \
-        --host2 ${fqdn} --port2 ${admin_port} \
+        --host2 ${host} --port2 ${admin_port} \
         --replicationPort2 ${repl_port} \
         --bindDN2 '${admin_user}' --bindPassword2 ${admin_password} \
         --baseDN '${base_dn}'\"",
       unless => "/bin/su ${user} -s /bin/bash -c \"$dsreplication \
-        status | grep ${fqdn} | cut -d : -f 5 | grep true\"",
+        status | grep ${host} | cut -d : -f 5 | grep true\"",
       notify => Exec["initialize replication"]
     }
 
     exec { "initialize replication":
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication initialize \
-        -h ${master} -p ${admin_port} -O ${fqdn} --baseDN '${base_dn}'\"",
+        -h ${master} -p ${admin_port} -O ${host} --baseDN '${base_dn}'\"",
       require => Exec["enable replication"],
       refreshonly => true,
     }
