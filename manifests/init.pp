@@ -73,13 +73,13 @@ class opendj (
 
   file_line { 'file_limits_soft':
     path => '/etc/security/limits.conf',
-    line => 'opendj soft nofile 65536',
+    line => '${user} soft nofile 65536',
     require => User["${user}"],
   }
 
   file_line { 'file_limits_hard':
     path => '/etc/security/limits.conf',
-    line => 'opendj hard nofile 131072',
+    line => '${user} hard nofile 131072',
     require => User["${user}"],
   }
 
