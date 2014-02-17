@@ -71,6 +71,16 @@ class opendj (
     mode => 0600
   }
 
+  file_line { 'file_limits_soft':
+    path => '/etc/security/limits.conf',
+    line => 'opendj soft nofile 65536',
+  }
+
+  file_line { 'file_limits_hard':
+    path => '/etc/security/limits.conf',
+    line => 'opendj hard nofile 131072',
+  }
+
   exec { "configure opendj":
     require => File["${tmp}/opendj.properties"],
     command => "/bin/su opendj -s /bin/bash -c '${home}/setup -i \
