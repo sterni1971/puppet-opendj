@@ -45,13 +45,14 @@ class opendj (
     ensure => "present",
     groups => $group,
     managehome => true,
+    require => Group["${group}"],
   }
 
   file { "${home}":
     ensure => directory,
     owner => $user,
     group => $group,
-    require => Package["opendj"]
+    require => [User["${user}"], Package["opendj"]]
   }
 
   file { "${tmp}/opendj.properties":
@@ -68,7 +69,8 @@ class opendj (
     content => template("${module_name}/base_dn.ldif.erb"),
     owner => $user,
     group => $group,
-    mode => 0600
+    mode => 0600,
+    require => User["${user}"],
   }
 
   file_line { 'file_limits_soft':
@@ -112,7 +114,7 @@ class opendj (
     require => Exec["configure opendj"]
   }
 
-  if ($host != $master) {
+  if ($master != '' and $host != $master) {
    exec { "enable replication":
       require => Exec["configure opendj"],
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
