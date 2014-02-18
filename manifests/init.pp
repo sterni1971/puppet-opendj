@@ -23,11 +23,11 @@ class opendj (
   $home            = hiera('opendj::home', '/opt/opendj'),
   $user            = hiera('opendj::user', 'opendj'),
   $group           = hiera('opendj::group', 'opendj'),
-  $host            = hiera('opendj::host'),
-  $tmp		         = hiera('opendj::tmpdir', '/dev/shm'),
+  $host            = hiera('opendj::host', $fqdn),
+  $tmp             = hiera('opendj::tmpdir', '/tmp'),
   $master          = hiera('opendj::master', undef),
 ) {
-  $common_opts   = "-h ${fqdn} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
+  $common_opts   = "-h ${host} -D '${opendj::admin_user}' -w ${opendj::admin_password}"
   $ldapsearch    = "${opendj::home}/bin/ldapsearch ${common_opts} -p ${opendj::ldap_port}"
   $ldapmodify    = "${opendj::home}/bin/ldapmodify ${common_opts} -p ${opendj::ldap_port}"
   $dsconfig      = "${opendj::home}/bin/dsconfig   ${common_opts} -p ${opendj::admin_port} -X -n"
@@ -37,11 +37,22 @@ class opendj (
     ensure => present,
   }
 
+  group { "${group}":
+    ensure => "present",
+  }
+
+  user { "${user}":
+    ensure => "present",
+    groups => $group,
+    managehome => true,
+    require => Group["${group}"],
+  }
+
   file { "${home}":
     ensure => directory,
     owner => $user,
     group => $group,
-    require => Package["opendj"]
+    require => [User["${user}"], Package["opendj"]]
   }
 
   file { "${tmp}/opendj.properties":
@@ -58,13 +69,26 @@ class opendj (
     content => template("${module_name}/base_dn.ldif.erb"),
     owner => $user,
     group => $group,
-    mode => 0600
+    mode => 0600,
+    require => User["${user}"],
+  }
+
+  file_line { 'file_limits_soft':
+    path => '/etc/security/limits.conf',
+    line => '${user} soft nofile 65536',
+    require => User["${user}"],
+  }
+
+  file_line { 'file_limits_hard':
+    path => '/etc/security/limits.conf',
+    line => '${user} hard nofile 131072',
+    require => User["${user}"],
   }
 
   exec { "configure opendj":
     require => File["${tmp}/opendj.properties"],
     command => "/bin/su opendj -s /bin/bash -c '${home}/setup -i \
-        -n -Q --acceptLicense --propertiesFilePath /dev/shm/opendj.properties'",
+        -n -Q --acceptLicense --propertiesFilePath ${tmp}/opendj.properties'",
     creates => "${home}/config",
     notify => Exec['create base dn'],
   }
@@ -80,7 +104,7 @@ class opendj (
   exec { "create base dn":
     require => File["${tmp}/base_dn.ldif"],
     command => "${home}/bin/ldapmodify -a -D '${admin_user}' \
-	    -w '${admin_password}' -h ${fqdn} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
+	    -w '${admin_password}' -h ${host} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
     refreshonly => true,
   }
 
@@ -90,25 +114,25 @@ class opendj (
     require => Exec["configure opendj"]
   }
 
-  if ($fqdn != $master) {
+  if ($master != '' and $host != $master) {
    exec { "enable replication":
       require => Exec["configure opendj"],
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
         --host1 ${master} --port1 ${admin_port} \
         --replicationPort1 ${repl_port} \
         --bindDN1 '${admin_user}' --bindPassword1 ${admin_password} \
-        --host2 ${fqdn} --port2 ${admin_port} \
+        --host2 ${host} --port2 ${admin_port} \
         --replicationPort2 ${repl_port} \
         --bindDN2 '${admin_user}' --bindPassword2 ${admin_password} \
         --baseDN '${base_dn}'\"",
       unless => "/bin/su ${user} -s /bin/bash -c \"$dsreplication \
-        status | grep ${fqdn} | cut -d : -f 5 | grep true\"",
+        status | grep ${host} | cut -d : -f 5 | grep true\"",
       notify => Exec["initialize replication"]
     }
 
     exec { "initialize replication":
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication initialize \
-        -h ${master} -p ${admin_port} -O ${fqdn} --baseDN '${base_dn}'\"",
+        -h ${master} -p ${admin_port} -O ${host} --baseDN '${base_dn}'\"",
       require => Exec["enable replication"],
       refreshonly => true,
     }
