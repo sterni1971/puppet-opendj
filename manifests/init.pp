@@ -52,7 +52,8 @@ class opendj (
     ensure => directory,
     owner => $user,
     group => $group,
-    require => [User["${user}"], Package["opendj"]]
+    recurse => true,
+    require => [User["${user}"], Package["opendj"]],
   }
 
   file { "${tmp}/opendj.properties":
