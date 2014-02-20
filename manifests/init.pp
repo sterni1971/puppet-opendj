@@ -71,7 +71,8 @@ class opendj (
     owner => $user,
     group => $group,
     mode => 0600,
-    require => User["${user}"],
+    require => [User["${user}"], Service['opendj']],
+    notify => Exec["create base dn"],
   }
 
   file_line { 'file_limits_soft':
@@ -121,7 +122,6 @@ class opendj (
   }
 
   exec { "create base dn":
-    require => [File["${tmp}/base_dn.ldif"], Service['opendj']],
     command => "${home}/bin/ldapmodify -a -D '${admin_user}' \
         -w '${admin_password}' -h ${host} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
     refreshonly => true,
