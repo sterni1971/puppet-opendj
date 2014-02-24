@@ -52,7 +52,8 @@ class opendj (
     ensure => directory,
     owner => $user,
     group => $group,
-    require => [User["${user}"], Package["opendj"]]
+    recurse => true,
+    require => [User["${user}"], Package["opendj"]],
   }
 
   file { "${tmp}/opendj.properties":
@@ -70,7 +71,8 @@ class opendj (
     owner => $user,
     group => $group,
     mode => 0600,
-    require => User["${user}"],
+    require => [User["${user}"], Service['opendj']],
+    notify => Exec["create base dn"],
   }
 
   file_line { 'file_limits_soft':
@@ -88,35 +90,52 @@ class opendj (
   exec { "configure opendj":
     require => File["${tmp}/opendj.properties"],
     command => "/bin/su opendj -s /bin/bash -c '${home}/setup -i \
-        -n -Q --acceptLicense --propertiesFilePath ${tmp}/opendj.properties'",
+        -n -Q --acceptLicense --doNotStart --propertiesFilePath ${tmp}/opendj.properties'",
     creates => "${home}/config",
-    notify => Exec['create base dn'],
+    notify => Exec['create RC script'],
   }
-  
+
+  exec { "create RC script":
+    require => Package["opendj"],
+    command => "${home}/bin/create-rc-script --userName ${user} \
+        --outputFile /etc/init.d/opendj",
+    creates => "/etc/init.d/opendj",
+    notify => Service['opendj'],
+  }
+
+  service { 'opendj':
+    require => Exec["create RC script"],
+    enable => true,
+    ensure => running,
+    hasrestart => true,
+    hasstatus => false,
+    status => "${home}/bin/status -D \"${admin_user}\" \
+        --bindPassword ${admin_password} | grep --quiet Started",
+  }
+
   exec { "reject unauthenticated requests":
-    require => Exec["configure opendj"],
+    require => Service['opendj'],
     command => "/bin/su ${user} -s /bin/bash -c \" \
       $dsconfig set-global-configuration-prop --set reject-unauthenticated-requests:true\"",
     unless => "/bin/su ${user} -s /bin/bash -c \" \
-      $dsconfig get-global-configuration-prop | grep 'reject-unauthenticated-requests' | grep true\""
+      $dsconfig get-global-configuration-prop | grep 'reject-unauthenticated-requests' | grep true\"",
   }
 
   exec { "create base dn":
-    require => File["${tmp}/base_dn.ldif"],
     command => "${home}/bin/ldapmodify -a -D '${admin_user}' \
-	    -w '${admin_password}' -h ${host} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
+        -w '${admin_password}' -h ${host} -p ${ldap_port} -f '${tmp}/base_dn.ldif'",
     refreshonly => true,
   }
 
   exec { "set single structural objectclass behavior":
     command => "${dsconfig} --advanced set-global-configuration-prop --set single-structural-objectclass-behavior:accept",
     unless  => "${dsconfig} --advanced get-global-configuration-prop | grep 'single-structural-objectclass-behavior' | grep accept",
-    require => Exec["configure opendj"]
+    require => Service['opendj'],
   }
 
   if ($master != '' and $host != $master) {
    exec { "enable replication":
-      require => Exec["configure opendj"],
+      require => Service['opendj'],
       command => "/bin/su ${user} -s /bin/bash -c \"$dsreplication enable \
         --host1 ${master} --port1 ${admin_port} \
         --replicationPort1 ${repl_port} \
