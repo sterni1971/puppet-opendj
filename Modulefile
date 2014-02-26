@@ -1,5 +1,5 @@
 name         'conductas-opendj'
-version      '0.0.2'
+version      '0.0.3'
 source       'git@github.com:ConductAS/puppet-opendj.git'
 author       'Eivind Mikkelsen <eivindm@conduct.no>'
 license      'Simplified BSD License'
