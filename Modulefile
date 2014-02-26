@@ -1,6 +1,6 @@
-name         'conduct-opendj'
+name         'conductas-opendj'
 version      '0.0.2'
-source       'git://github.com/ConductAS/puppet-opendj'
+source       'git@github.com:ConductAS/puppet-opendj.git'
 author       'Eivind Mikkelsen <eivindm@conduct.no>'
 license      'Simplified BSD License'
 summary      'OpenDJ configuration module'
